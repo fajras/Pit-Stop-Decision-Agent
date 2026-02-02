@@ -325,14 +325,15 @@ async function checkRetrainStatus() {
   const btn = document.getElementById("retrainBtn");
   const info = document.getElementById("retrainInfo");
 
-  if (!btn) return;
+  if (!btn || !info) return;
 
-  btn.disabled = !data.enabled;
+  btn.disabled = !data.can_retrain;
 
-  info.innerText = data.enabled
+  info.innerText = data.can_retrain
     ? `Ready (${data.current}/${data.threshold})`
-    : `Not enough data (${data.current}/${data.threshold})`;
+    : `Remaining ${data.remaining}`;
 }
+
 async function triggerRetrain() {
   const btn = document.getElementById("retrainBtn");
   btn.disabled = true;
@@ -347,7 +348,7 @@ async function triggerRetrain() {
   alert(
     data.status === "success"
       ? "Agent retrained successfully"
-      : "Retraining skipped"
+      : "Retraining skipped",
   );
 
   btn.innerText = "Retrain Agent";

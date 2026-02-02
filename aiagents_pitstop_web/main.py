@@ -1,4 +1,5 @@
 import json
+from aiagents_pitstop_agent.application import retrain_decision_service
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from aiagents_pitstop_agent.application.profile_service import ProfileService
 from aiagents_pitstop_agent.application.feedback_service import FeedbackService
 from aiagents_pitstop_agent.infrastructure.models import UserProfile
 from pathlib import Path
+
+
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent          
@@ -162,30 +165,13 @@ def get_learning_stats(user_id: str, db: Session = Depends(get_db)):
 
     return data
 
-from aiagents_pitstop_agent.infrastructure.models import SystemSettings
+
 
 @app.get("/api/retrain/status")
-def retrain_status(db: Session = Depends(get_db)):
-    settings = db.execute(
-        select(SystemSettings).limit(1)
-    ).scalars().first()
+def get_retrain_status(db: Session = Depends(get_db)):
+    service = retrain_decision_service.RetrainDecisionService(db)
+    return service.get_status()
 
-    if settings is None:
-        return {
-            "enabled": False,
-            "reason": "System settings not initialized"
-        }
-
-    can_retrain = (
-        settings.enabled and
-        settings.new_experiences_since_train >= settings.retrain_threshold
-    )
-
-    return {
-        "enabled": can_retrain,
-        "current": settings.new_experiences_since_train,
-        "threshold": settings.retrain_threshold
-    }
 
 from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
 from aiagents_pitstop_agent.application.training_service import TrainingService
