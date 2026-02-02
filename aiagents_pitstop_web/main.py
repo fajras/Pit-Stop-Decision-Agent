@@ -1,5 +1,6 @@
 import json
 from aiagents_pitstop_agent.application import retrain_decision_service
+from aiagents_pitstop_agent.application.decision_service import DecisionService
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -63,32 +64,18 @@ def submit_lap(payload: dict, db: Session = Depends(get_db)):
 
 from aiagents_pitstop_agent.infrastructure.models import LapQueueItem, Decision
 
+from aiagents_pitstop_web.decision_repository import DecisionRepository
+
+def get_decision_service(db: Session = Depends(get_db)) -> DecisionService:
+    repo = DecisionRepository(db)
+    return DecisionService(repo)
+
 @app.get("/api/decisions/{task_id}")
-def get_decision(task_id: int, db: Session = Depends(get_db)):
-    item = db.get(LapQueueItem, task_id)
-    if item is None:
-        return {"status": "NotFound"}
-
-    if item.status in ("Queued", "Processing"):
-        return {"status": item.status}
-
-    if item.status == "Failed":
-        return {"status": "Failed", "error": item.error_text}
-
-    if item.status == "Done" and item.decision_id:
-        dec = db.get(Decision, item.decision_id)
-        if dec is None:
-            return {"status": "Failed", "error": "Decision missing"}
-        return {
-            "status": "Done",
-            "decisionId": dec.id,
-            "action": dec.action,
-            "reason": dec.reason,
-            "suggestedTyre": dec.suggested_tyre,
-            "modelVersion": dec.model_version,
-        }
-
-    return {"status": "Failed", "error": "Invalid state"}
+def get_decision(
+    task_id: str,
+    service: DecisionService = Depends(get_decision_service)
+):
+    return service.get_decision(task_id)
 
 
 @app.post("/api/feedback")

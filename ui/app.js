@@ -78,7 +78,12 @@ function updateTyreColor() {
 /* ---------------- LAP SEND ---------------- */
 
 async function sendLap() {
+  if (decisionPollInterval) {
+    clearInterval(decisionPollInterval);
+    decisionPollInterval = null;
+  }
   currentDecisionId = null;
+
   setFeedbackEnabled(false);
   if (
     !userSelect.value ||
@@ -210,50 +215,51 @@ window.addEventListener("beforeunload", async () => {
 
   sessionStorage.removeItem("guestUser");
 });
+
 function handleDecision(data) {
   document.getElementById("loader").classList.add("hidden");
 
   const radio = document.getElementById("decisionText");
   const reasonBox = document.getElementById("reasonText");
 
+  const payload = data.payload;
+
   radio.classList.add("static");
   radio.innerText = "📻 RADIO…";
 
   setTimeout(() => {
     radio.classList.remove("static");
-    radio.innerText = data.action === "PIT" ? "BOX BOX" : "STAY OUT";
+    radio.innerText = payload.action === "PIT" ? "BOX BOX" : "STAY OUT";
 
     const parts = [];
-    if (data.reason) parts.push(data.reason);
-    if (data.suggestedTyre) parts.push(`Next tyre ${data.suggestedTyre}`);
+    if (payload.reason) parts.push(payload.reason);
+    if (payload.suggestedTyre) parts.push(`Next tyre ${payload.suggestedTyre}`);
 
     reasonBox.innerText = parts.join(" · ");
   }, 700);
 
-  currentDecisionId = data.decisionId;
+  currentDecisionId = parseInt(data.task_id, 10);
   showFeedbackHint();
   setFeedbackEnabled(true);
 }
 
+let decisionPollInterval = null;
 async function pollDecision(taskId) {
-  const interval = setInterval(async () => {
+  if (decisionPollInterval) {
+    clearInterval(decisionPollInterval);
+    decisionPollInterval = null;
+  }
+
+  decisionPollInterval = setInterval(async () => {
     const res = await fetch(`${API}/api/decisions/${taskId}`);
     const data = await res.json();
 
-    // SAFETY GUARD
-    if (!data || !data.status) {
-      return;
-    }
+    if (!data || !data.status) return;
 
-    if (data.status === "Queued" || data.status === "Processing") {
-      return;
-    }
-
-    if (data.status === "Done") {
-      clearInterval(interval);
+    if (data.status === "READY" || data.status === "FAILED") {
+      clearInterval(decisionPollInterval);
+      decisionPollInterval = null;
       handleDecision(data);
-      currentDecisionId = data.decisionId;
-      return;
     }
   }, 500);
 }
