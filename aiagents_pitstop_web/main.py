@@ -1,0 +1,210 @@
+import json
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from aiagents_pitstop_agent.infrastructure.db import engine, Base
+from aiagents_pitstop_agent.infrastructure import models
+
+Base.metadata.create_all(bind=engine)
+from aiagents_pitstop_agent.infrastructure.models import Experience
+
+from aiagents_pitstop_agent.infrastructure.db import SessionLocal
+from aiagents_pitstop_agent.runners.scoring_runner import ScoringAgentRunner
+from aiagents_pitstop_agent.infrastructure.models import Decision
+from aiagents_pitstop_agent.decision_engine.engine_registry import ModelRegistry
+from aiagents_pitstop_agent.application.profile_service import ProfileService
+from aiagents_pitstop_agent.application.feedback_service import FeedbackService
+from aiagents_pitstop_agent.infrastructure.models import UserProfile
+from pathlib import Path
+
+app = FastAPI()
+BASE_DIR = Path(__file__).resolve().parent          
+PROJECT_ROOT = BASE_DIR.parent                  
+UI_DIR = PROJECT_ROOT / "ui"                 
+
+if not UI_DIR.exists():
+    raise RuntimeError(f"UI directory not found at {UI_DIR}")
+
+app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+
+@app.get("/")
+def serve_ui():
+    return FileResponse(UI_DIR / "index.html")
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_profile_service():
+    return ProfileService()
+
+def get_feedback_service(
+    profiles: ProfileService = Depends(get_profile_service)
+):
+    return FeedbackService(profiles)
+
+from aiagents_pitstop_agent.application.queue_service import QueueService
+
+@app.post("/api/laps")
+def submit_lap(payload: dict, db: Session = Depends(get_db)):
+    user_id = payload.get("userId", "anon")
+    q = QueueService()
+    queue_id = q.enqueue(db, user_id, payload)
+    return {"status": "Queued", "taskId": queue_id}
+
+from aiagents_pitstop_agent.infrastructure.models import LapQueueItem, Decision
+
+@app.get("/api/decisions/{task_id}")
+def get_decision(task_id: int, db: Session = Depends(get_db)):
+    item = db.get(LapQueueItem, task_id)
+    if item is None:
+        return {"status": "NotFound"}
+
+    if item.status in ("Queued", "Processing"):
+        return {"status": item.status}
+
+    if item.status == "Failed":
+        return {"status": "Failed", "error": item.error_text}
+
+    if item.status == "Done" and item.decision_id:
+        dec = db.get(Decision, item.decision_id)
+        if dec is None:
+            return {"status": "Failed", "error": "Decision missing"}
+        return {
+            "status": "Done",
+            "decisionId": dec.id,
+            "action": dec.action,
+            "reason": dec.reason,
+            "suggestedTyre": dec.suggested_tyre,
+            "modelVersion": dec.model_version,
+        }
+
+    return {"status": "Failed", "error": "Invalid state"}
+
+
+@app.post("/api/feedback")
+def submit_feedback(
+    payload: dict,
+    db: Session = Depends(get_db),
+    feedback_service: FeedbackService = Depends(get_feedback_service),
+):
+    decision_id = int(payload["decisionId"])
+    position_delta = int(payload["positionDelta"])
+    return feedback_service.submit_feedback(db, decision_id, position_delta)
+
+
+@app.get("/api/profile/{user_id}")
+def get_profile(
+    user_id: str,
+    db: Session = Depends(get_db),
+    profiles: ProfileService = Depends(get_profile_service),
+):
+    prof = profiles.get_or_create(db, user_id)
+    return {
+        "userId": prof.user_id,
+        "pitBias": float(prof.pit_bias),
+        "stayBias": float(prof.stay_bias),
+        "updates": int(prof.updates),
+    }
+
+@app.post("/api/session/end")
+def end_session(db: Session = Depends(get_db)):
+    temp_users = db.query(UserProfile).filter(
+        UserProfile.is_temporary == True
+    ).all()
+
+    for prof in temp_users:
+        db.query(Decision).filter(Decision.user_id == prof.user_id).delete()
+        db.query(Experience).filter(Experience.user_id == prof.user_id).delete()
+        db.delete(prof)
+
+    db.commit()
+    return {"status": "session cleared"}
+
+import asyncio
+from .worker import run_loop
+
+stop_event = asyncio.Event()
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(run_loop(stop_event))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_event.set()
+
+@app.get("/api/learning-stats/{user_id}")
+def get_learning_stats(user_id: str, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Experience)
+        .filter(Experience.user_id == user_id)
+        .order_by(Experience.id)
+        .all()
+    )
+
+    data = []
+    total = 0.0
+
+    for idx, e in enumerate(rows, start=1):
+        total += e.reward
+        avg = total / idx
+        data.append({
+            "step": idx,
+            "avgReward": round(avg, 3)
+        })
+
+    return data
+
+from aiagents_pitstop_agent.infrastructure.models import SystemSettings
+
+@app.get("/api/retrain/status")
+def retrain_status(db: Session = Depends(get_db)):
+    settings = db.execute(
+        select(SystemSettings).limit(1)
+    ).scalars().first()
+
+    if settings is None:
+        return {
+            "enabled": False,
+            "reason": "System settings not initialized"
+        }
+
+    can_retrain = (
+        settings.enabled and
+        settings.new_experiences_since_train >= settings.retrain_threshold
+    )
+
+    return {
+        "enabled": can_retrain,
+        "current": settings.new_experiences_since_train,
+        "threshold": settings.retrain_threshold
+    }
+
+from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
+from aiagents_pitstop_agent.application.training_service import TrainingService
+
+@app.post("/api/retrain")
+def retrain_agent(db: Session = Depends(get_db)):
+    runner = RetrainAgentRunner(
+        training=TrainingService()
+    )
+
+    result = runner.step(db)
+
+    if result is None:
+        return {
+            "status": "skipped",
+            "message": "Not enough data for retraining"
+        }
+
+    return {
+        "status": "success",
+        "result": result
+    }

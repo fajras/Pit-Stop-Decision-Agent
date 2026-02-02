@@ -1,0 +1,69 @@
+<main class="pitwall">
+  <link rel="stylesheet" href="/ui/style.css" />
+  <div class="pit-container">
+    <section class="block driver">
+      <label>DRIVERs</label>
+      <select id="userSelect"></select>
+      <button class="ghost" onclick="useGuest()">Test as Guest</button>
+    </section>
+    <section class="block retrain">
+      <label>AGENT MAINTENANCE</label>
+      <button id="retrainBtn" disabled onclick="triggerRetrain()">
+        Retrain Agent
+      </button>
+      <div id="retrainInfo" class="hint"></div>
+    </section>
+
+    <section class="block telemetry">
+      <label>LAP TELEMETRY</label>
+      <div class="telemetry-grid">
+        <input id="lap" type="number" placeholder="Lap" />
+        <input id="position" type="number" placeholder="Position" />
+        <select id="tyre" onchange="updateTyreColor()">
+          <option>SOFT</option>
+          <option>MEDIUM</option>
+          <option>HARD</option>
+        </select>
+        <input id="tyreLife" type="number" placeholder="Tyre life" />
+        <div class="tyre-bar">
+          <div id="tyreFill"></div>
+        </div>
+
+        <input id="lapTime" type="number" step="0.1" placeholder="Lap time s" />
+      </div>
+      <button class="primary" onclick="sendLap()">BOX BOX</button>
+      <div id="lapTimeline" class="timeline"></div>
+    </section>
+
+    <section class="block decision">
+      <label>PIT WALL DECISION</label>
+      <div id="loader" class="hidden"></div>
+      <div id="decisionText" class="radio">Awaiting telemetry…</div>
+      <div id="reasonText" class="decision-reason"></div>
+      <div id="feedbackHint" class="feedback-hint hidden">
+        After one lap send feedback
+      </div>
+    </section>
+
+    <section class="block feedback">
+      <button class="good" onclick="sendFeedback(1)">
+        ▲ Position or lap time improved
+      </button>
+      <button class="bad" onclick="sendFeedback(-1)">
+        ▼ Position or lap time worse
+      </button>
+    </section>
+    <section class="block learning">
+      <label>DRIVER LEARNING OVER TIME</label>
+      <canvas id="learningChart" height="120"></canvas>
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <div id="feedbackMessage" class="feedback-message hidden">
+      Feedback recorded. Thank you.
+    </div>
+  </div>
+
+  <script src="/ui/app.js"></script>
+</main>
