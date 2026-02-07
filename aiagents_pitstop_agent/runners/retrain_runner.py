@@ -4,7 +4,7 @@ from aiagents_core.software_agent import SoftwareAgent
 
 from ..infrastructure.models import SystemSettings
 from ..application.training_service import TrainingService
-from ..application.retrain_worker import retrain_event
+from .retrain_worker import retrain_event
 
 
 class RetrainAgentRunner(

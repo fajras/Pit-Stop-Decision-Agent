@@ -6,7 +6,7 @@ from sqlalchemy import select
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
+from aiagents_pitstop_agent.runners.retrain_worker import RetrainWorker
 from aiagents_pitstop_agent.infrastructure.db import engine, Base
 from aiagents_pitstop_agent.application.training_service import TrainingService
 from aiagents_pitstop_agent.infrastructure.models import Experience
@@ -17,7 +17,7 @@ from aiagents_pitstop_agent.infrastructure.models import Decision
 from aiagents_pitstop_agent.application.profile_service import ProfileService
 from aiagents_pitstop_agent.application.feedback_service import FeedbackService
 from aiagents_pitstop_agent.infrastructure.models import UserProfile
-from aiagents_pitstop_agent.application.retrain_worker import retrain_event
+from aiagents_pitstop_agent.runners.retrain_worker import retrain_event
 from pathlib import Path
 from aiagents_pitstop_agent.application.queue_service import QueueService
 from .worker import run_loop
@@ -120,7 +120,7 @@ def end_session(db: Session = Depends(get_db)):
 
 
 from threading import Event
-from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
+from aiagents_pitstop_agent.runners.retrain_worker import RetrainWorker
 
 retrain_stop_event = Event()
 
