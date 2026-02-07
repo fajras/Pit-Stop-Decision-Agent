@@ -174,10 +174,16 @@ def get_retrain_status(db: Session = Depends(get_db)):
 
 
 @app.post("/api/retrain")
-def retrain_agent():
-    if not retrain_event.is_set():
-        retrain_event.set()
+def retrain_agent(db: Session = Depends(get_db)):
+    service = retrain_decision_service.RetrainDecisionService(db)
+    status = service.get_status()
+
+    if not status.can_retrain:
+        return {"status": "skipped", "reason": "Not eligible"}
+
+    retrain_event.set()
     return {"status": "scheduled"}
+
 
 
 

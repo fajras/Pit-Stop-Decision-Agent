@@ -244,6 +244,7 @@ function handleDecision(data) {
 }
 
 let decisionPollInterval = null;
+
 async function pollDecision(taskId) {
   if (decisionPollInterval) {
     clearInterval(decisionPollInterval);
@@ -251,16 +252,45 @@ async function pollDecision(taskId) {
   }
 
   decisionPollInterval = setInterval(async () => {
-    const res = await fetch(`${API}/api/decisions/${taskId}`);
+    let res;
+    try {
+      res = await fetch(`${API}/api/decisions/${taskId}`);
+    } catch (e) {
+      console.warn("Decision poll failed:", e);
+      return;
+    }
+
+    if (!res.ok) {
+      clearInterval(decisionPollInterval);
+      decisionPollInterval = null;
+
+      let error;
+      try {
+        error = await res.json();
+      } catch {
+        error = { detail: "Unknown error" };
+      }
+
+      alert(error.detail || "Decision failed");
+      return;
+    }
+
     const data = await res.json();
 
     if (!data || !data.status) return;
 
-    if (data.status === "READY" || data.status === "FAILED") {
+    if (data.status === "PENDING") {
+      return;
+    }
+
+    if (data.status === "READY") {
       clearInterval(decisionPollInterval);
       decisionPollInterval = null;
       handleDecision(data);
+      return;
     }
+
+    console.warn("Unexpected decision status:", data.status);
   }, 500);
 }
 
