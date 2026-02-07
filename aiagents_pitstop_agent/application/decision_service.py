@@ -1,53 +1,62 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from aiagents_pitstop_agent.infrastructure.decision_dto import DecisionResponse
 from fastapi import HTTPException
 
 
 class DecisionStatus:
-    READY = "READY"
     PENDING = "PENDING"
-    RUNNING = "RUNNING"
+    READY = "READY"
     FAILED = "FAILED"
-    INVALID = "INVALID"
-    PENDING_RETRAIN = "PENDING_RETRAIN"
 
 
 class DecisionService:
-    def __init__(self, decision_repo):
-        self._repo = decision_repo
 
-    def get_decision(self, task_id: str) -> Dict[str, Any]:
-        decision = self._repo.get_decision(task_id)
+    def __init__(self, repo):
+        self.repo = repo
 
-        if decision is None:
-            raise HTTPException(status_code=404, detail="Decision not ready")
+    def get_decision(self, task_id: int) -> DecisionResponse:
+        result = self.repo.get_with_state(task_id)
 
-        confidence = decision.expected_pit
-        if confidence is None:
-            confidence = decision.expected_stay
+        if result is None:
+            raise HTTPException(status_code=404, detail="Task not found")
 
-        return {
-            "task_id": task_id,
-            "status": DecisionStatus.READY,
-            "payload": {
-                "action": decision.action,
-                "confidence": confidence,
-                "reason": decision.reason,
-                "suggestedTyre": decision.suggested_tyre,
-            },
-            "message": "Decision completed",
-        }
+        queue_item, decision = result
 
+        # PENDING STATES
+        if queue_item.status in ("Queued", "Processing"):
+            return DecisionResponse(
+                task_id=task_id,
+                status=DecisionStatus.PENDING,
+                message="Decision pending"
+            )
 
-    def _validate_state(self, status_value: str, decision_obj: Any) -> None:
-        if status_value == DecisionStatus.INVALID:
-            raise HTTPException(status_code=409, detail="Invalid decision state")
+        # FAILED STATE
+        if queue_item.status == "Failed":
+            raise HTTPException(
+                status_code=500,
+                detail=queue_item.error_text or "Decision failed"
+            )
 
-        if status_value == DecisionStatus.PENDING_RETRAIN:
-            raise HTTPException(status_code=423, detail="Decision pending retrain")
+        # DONE STATE
+        if queue_item.status == "Done":
+            if decision is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Decision missing"
+                )
 
-        if status_value == DecisionStatus.FAILED:
-            err = getattr(decision_obj, "error", None) or "Decision failed"
-            raise HTTPException(status_code=500, detail=str(err))
+            return DecisionResponse(
+                task_id=task_id,
+                status=DecisionStatus.READY,
+                payload={
+                    "action": decision.action,
+                    "reason": decision.reason,
+                    "suggestedTyre": decision.suggested_tyre,
+                },
+                message="Decision completed"
+            )
 
-    
+        # INVALID STATE
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invalid decision state: {queue_item.status}"
+        )

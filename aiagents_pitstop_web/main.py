@@ -11,10 +11,11 @@ from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
 from aiagents_pitstop_agent.infrastructure.db import engine, Base
 from aiagents_pitstop_agent.infrastructure import models
 from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
-
-Base.metadata.create_all(bind=engine)
+from aiagents_pitstop_agent.application.training_service import TrainingService
 from aiagents_pitstop_agent.infrastructure.models import Experience
-
+from aiagents_pitstop_agent.infrastructure.models import  Decision
+from aiagents_pitstop_agent.infrastructure.decision_repository import DecisionRepository
+from aiagents_pitstop_agent.application.decision_service import DecisionService
 from aiagents_pitstop_agent.infrastructure.db import SessionLocal
 from aiagents_pitstop_agent.runners.scoring_runner import ScoringAgentRunner
 from aiagents_pitstop_agent.infrastructure.models import Decision
@@ -23,8 +24,11 @@ from aiagents_pitstop_agent.application.profile_service import ProfileService
 from aiagents_pitstop_agent.application.feedback_service import FeedbackService
 from aiagents_pitstop_agent.infrastructure.models import UserProfile
 from pathlib import Path
+from aiagents_pitstop_agent.application.queue_service import QueueService
+import asyncio
+from .worker import run_loop
 
-
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent          
@@ -56,7 +60,6 @@ def get_feedback_service(
     return FeedbackService(profiles)
 
 
-from aiagents_pitstop_agent.application.queue_service import QueueService
 
 @app.post("/api/laps")
 def submit_lap(payload: dict, db: Session = Depends(get_db)):
@@ -65,17 +68,15 @@ def submit_lap(payload: dict, db: Session = Depends(get_db)):
     queue_id = q.enqueue(db, user_id, payload)
     return {"status": "Queued", "taskId": queue_id}
 
-from aiagents_pitstop_agent.infrastructure.models import LapQueueItem, Decision
 
-from aiagents_pitstop_agent.infrastructure.decision_repository import DecisionRepository
 
 def get_decision_service(db: Session = Depends(get_db)) -> DecisionService:
-    repo = DecisionRepository(db)
-    return DecisionService(repo)
+    return DecisionService(DecisionRepository(db))
+
 
 @app.get("/api/decisions/{task_id}")
 def get_decision(
-    task_id: str,
+    task_id: int,
     service: DecisionService = Depends(get_decision_service)
 ):
     return service.get_decision(task_id)
@@ -120,8 +121,7 @@ def end_session(db: Session = Depends(get_db)):
     db.commit()
     return {"status": "session cleared"}
 
-import asyncio
-from .worker import run_loop
+
 
 stop_event = asyncio.Event()
 retrain_worker = RetrainWorker(
@@ -166,7 +166,7 @@ def get_retrain_status(db: Session = Depends(get_db)):
     service = retrain_decision_service.RetrainDecisionService(db)
     return service.get_status()
 
-from aiagents_pitstop_agent.application.training_service import TrainingService
+
 
 @app.post("/api/retrain")
 def retrain_agent(db: Session = Depends(get_db)):

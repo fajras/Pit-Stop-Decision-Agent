@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class DecisionResponse(BaseModel):
-    task_id: str
+    task_id: int
     status: str
     payload: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
