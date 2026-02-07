@@ -1,4 +1,4 @@
-from aiagents_pitstop_agent.infrastructure.decision_dto import DecisionResponse
+from aiagents_pitstop_agent.application.dto.decision_dto import DecisionResponse
 from fastapi import HTTPException
 
 

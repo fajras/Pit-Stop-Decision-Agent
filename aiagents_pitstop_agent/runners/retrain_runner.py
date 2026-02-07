@@ -15,7 +15,6 @@ class RetrainAgentRunner(
         self._training = training
 
     def step(self, db: Session) -> dict | None:
-        # ---------- SENSE ----------
         settings = db.execute(
             select(SystemSettings).limit(1)
         ).scalars().first()
@@ -29,15 +28,9 @@ class RetrainAgentRunner(
         if settings.new_experiences_since_train < settings.retrain_threshold:
             return None
 
-        # ---------- THINK ----------
-        # prag je pređen → retrain treba da se desi
+        return {
+            "eligible": True,
+            "current": settings.new_experiences_since_train,
+            "threshold": settings.retrain_threshold
+        }
 
-        # ---------- ACT ----------
-        if not retrain_event.is_set():
-            retrain_event.set()
-
-        # ---------- LEARN ----------
-        settings.new_experiences_since_train = 0
-        db.commit()
-
-        return {"retrain_scheduled": True}
