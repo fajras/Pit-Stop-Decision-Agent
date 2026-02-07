@@ -7,8 +7,10 @@ from sqlalchemy import select
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
 from aiagents_pitstop_agent.infrastructure.db import engine, Base
 from aiagents_pitstop_agent.infrastructure import models
+from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
 
 Base.metadata.create_all(bind=engine)
 from aiagents_pitstop_agent.infrastructure.models import Experience
@@ -53,6 +55,7 @@ def get_feedback_service(
 ):
     return FeedbackService(profiles)
 
+
 from aiagents_pitstop_agent.application.queue_service import QueueService
 
 @app.post("/api/laps")
@@ -64,7 +67,7 @@ def submit_lap(payload: dict, db: Session = Depends(get_db)):
 
 from aiagents_pitstop_agent.infrastructure.models import LapQueueItem, Decision
 
-from aiagents_pitstop_web.decision_repository import DecisionRepository
+from aiagents_pitstop_agent.infrastructure.decision_repository import DecisionRepository
 
 def get_decision_service(db: Session = Depends(get_db)) -> DecisionService:
     repo = DecisionRepository(db)
@@ -121,9 +124,13 @@ import asyncio
 from .worker import run_loop
 
 stop_event = asyncio.Event()
-
+retrain_worker = RetrainWorker(
+    training_service=TrainingService(),
+    session_factory=SessionLocal
+)
 @app.on_event("startup")
 async def startup_event():
+    retrain_worker.start()
     asyncio.create_task(run_loop(stop_event))
 
 @app.on_event("shutdown")
@@ -159,8 +166,6 @@ def get_retrain_status(db: Session = Depends(get_db)):
     service = retrain_decision_service.RetrainDecisionService(db)
     return service.get_status()
 
-
-from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
 from aiagents_pitstop_agent.application.training_service import TrainingService
 
 @app.post("/api/retrain")
@@ -181,3 +186,5 @@ def retrain_agent(db: Session = Depends(get_db)):
         "status": "success",
         "result": result
     }
+
+

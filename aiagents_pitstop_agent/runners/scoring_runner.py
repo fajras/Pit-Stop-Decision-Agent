@@ -24,14 +24,6 @@ class ScoringTickResult:
 class ScoringAgentRunner(
     SoftwareAgent[dict, str, ScoringTickResult, None]
 ):
-    """
-    Scoring agent – jedan tick = obrada jedne poruke iz queue-a
-
-    Sense  → čita jednu queued poruku
-    Think  → ML + policy odluka (bez DB upisa)
-    Act    → persist Decision + update queue status
-    """
-
     def __init__(
         self,
         queue: QueueService,

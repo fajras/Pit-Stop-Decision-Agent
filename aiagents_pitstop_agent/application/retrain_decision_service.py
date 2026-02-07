@@ -1,22 +1,36 @@
-from aiagents_pitstop_agent.infrastructure.models import Experience
-
-RETRAIN_THRESHOLD = 20  
+from aiagents_pitstop_agent.infrastructure.models import Experience, SystemSettings
 
 class RetrainDecisionService:
     def __init__(self, db):
         self.db = db
 
     def get_status(self):
-        count = (
+        settings = (
+            self.db.query(SystemSettings)
+            .order_by(SystemSettings.id)
+            .first()
+        )
+
+        if settings is None or not settings.enabled:
+            return {
+                "can_retrain": False,
+                "current": 0,
+                "threshold": 0,
+                "remaining": 0,
+                "reason": "Retraining disabled"
+            }
+
+        current = (
             self.db.query(Experience)
             .count()
         )
 
-        remaining = max(0, RETRAIN_THRESHOLD - count)
+        threshold = settings.retrain_threshold
+        remaining = threshold - current if current < threshold else 0
 
         return {
-            "can_retrain": count >= RETRAIN_THRESHOLD,
-            "current": count,
-            "threshold": RETRAIN_THRESHOLD,
+            "can_retrain": current >= threshold,
+            "current": current,
+            "threshold": threshold,
             "remaining": remaining
         }
