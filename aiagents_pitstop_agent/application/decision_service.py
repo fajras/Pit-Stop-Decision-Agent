@@ -5,8 +5,6 @@ from fastapi import HTTPException
 class DecisionStatus:
     PENDING = "PENDING"
     READY = "READY"
-    FAILED = "FAILED"
-
 
 class DecisionService:
 

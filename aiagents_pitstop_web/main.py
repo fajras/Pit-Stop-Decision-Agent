@@ -1,6 +1,5 @@
 import json
 from aiagents_pitstop_agent.application import retrain_decision_service
-from aiagents_pitstop_agent.application.decision_service import DecisionService
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -9,25 +8,22 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
 from aiagents_pitstop_agent.infrastructure.db import engine, Base
-from aiagents_pitstop_agent.infrastructure import models
-from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
 from aiagents_pitstop_agent.application.training_service import TrainingService
 from aiagents_pitstop_agent.infrastructure.models import Experience
-from aiagents_pitstop_agent.infrastructure.models import  Decision
 from aiagents_pitstop_agent.infrastructure.decision_repository import DecisionRepository
 from aiagents_pitstop_agent.application.decision_service import DecisionService
 from aiagents_pitstop_agent.infrastructure.db import SessionLocal
-from aiagents_pitstop_agent.runners.scoring_runner import ScoringAgentRunner
 from aiagents_pitstop_agent.infrastructure.models import Decision
-from aiagents_pitstop_agent.decision_engine.engine_registry import ModelRegistry
 from aiagents_pitstop_agent.application.profile_service import ProfileService
 from aiagents_pitstop_agent.application.feedback_service import FeedbackService
 from aiagents_pitstop_agent.infrastructure.models import UserProfile
+from aiagents_pitstop_agent.application.retrain_worker import retrain_event
 from pathlib import Path
 from aiagents_pitstop_agent.application.queue_service import QueueService
-import asyncio
 from .worker import run_loop
+import asyncio
 
+stop_event = asyncio.Event()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -123,11 +119,17 @@ def end_session(db: Session = Depends(get_db)):
 
 
 
-stop_event = asyncio.Event()
+from threading import Event
+from aiagents_pitstop_agent.application.retrain_worker import RetrainWorker
+
+retrain_stop_event = Event()
+
 retrain_worker = RetrainWorker(
     training_service=TrainingService(),
-    session_factory=SessionLocal
+    session_factory=SessionLocal,
+    stop_event=retrain_stop_event
 )
+
 @app.on_event("startup")
 async def startup_event():
     retrain_worker.start()
@@ -135,7 +137,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    stop_event.set()
+    stop_event.set()          
+    retrain_stop_event.set()  
 
 @app.get("/api/learning-stats/{user_id}")
 def get_learning_stats(user_id: str, db: Session = Depends(get_db)):
@@ -168,23 +171,13 @@ def get_retrain_status(db: Session = Depends(get_db)):
 
 
 
+
+
 @app.post("/api/retrain")
-def retrain_agent(db: Session = Depends(get_db)):
-    runner = RetrainAgentRunner(
-        training=TrainingService()
-    )
+def retrain_agent():
+    if not retrain_event.is_set():
+        retrain_event.set()
+    return {"status": "scheduled"}
 
-    result = runner.step(db)
-
-    if result is None:
-        return {
-            "status": "skipped",
-            "message": "Not enough data for retraining"
-        }
-
-    return {
-        "status": "success",
-        "result": result
-    }
 
 
