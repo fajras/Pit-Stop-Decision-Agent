@@ -1,16 +1,15 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from aiagents_core.software_agent import SoftwareAgent
+
 from ..infrastructure.models import SystemSettings
 from ..application.training_service import TrainingService
+from ..application.retrain_worker import retrain_event
 
 
 class RetrainAgentRunner(
     SoftwareAgent[None, None, dict, None]
 ):
-    """
-    Retrain agent – jedan tick = provjera da li treba retrain
-    """
 
     def __init__(self, training: TrainingService):
         self._training = training
@@ -34,10 +33,11 @@ class RetrainAgentRunner(
         # prag je pređen → retrain treba da se desi
 
         # ---------- ACT ----------
-        result = self._training.train_and_activate(db)
+        if not retrain_event.is_set():
+            retrain_event.set()
 
         # ---------- LEARN ----------
         settings.new_experiences_since_train = 0
         db.commit()
 
-        return result
+        return {"retrain_scheduled": True}

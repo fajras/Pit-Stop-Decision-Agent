@@ -7,7 +7,6 @@ from aiagents_pitstop_agent.application.profile_service import ProfileService
 from aiagents_pitstop_agent.application.policies.pitstop_policy import PitStopPolicy
 from aiagents_pitstop_agent.decision_engine.engine_registry import ModelRegistry
 from aiagents_pitstop_agent.runners.scoring_runner import ScoringAgentRunner
-from aiagents_pitstop_agent.runners.retrain_runner import RetrainAgentRunner
 
 
 import asyncio
@@ -30,15 +29,10 @@ async def run_loop(stop_event):
         scoring=scoring_service
     )
 
-    retrain_runner = RetrainAgentRunner(
-        training=TrainingService()
-    )
-
     while not stop_event.is_set():
         db = SessionLocal()
         try:
             scoring_runner.step(db)
-            retrain_runner.step(db)
         finally:
             db.close()
 
